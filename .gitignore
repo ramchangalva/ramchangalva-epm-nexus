@@ -1,16 +1,21 @@
 # EPM password files (never commit credentials)
-config/passwords/
+config/passwords/*
+!config/passwords/.gitkeep
 *.epw
 
 # Log files
-logs/*.log
+logs/*
+!logs/.gitkeep
 
 # Downloaded data / reports
-data/output/
-data/input/
+data/output/*
+!data/output/.gitkeep
+data/input/*
+!data/input/.gitkeep
 
 # Snapshot artifacts
-scripts/artifacts/*.zip
+scripts/artifacts/*
+!scripts/artifacts/.gitkeep
 
 # OS / IDE
 .DS_Store
