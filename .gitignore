@@ -1,0 +1,18 @@
+# EPM password files (never commit credentials)
+config/passwords/
+*.epw
+
+# Log files
+logs/*.log
+
+# Downloaded data / reports
+data/output/
+data/input/
+
+# Snapshot artifacts
+scripts/artifacts/*.zip
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/settings.json

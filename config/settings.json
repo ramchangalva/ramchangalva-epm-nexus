@@ -1,0 +1,14 @@
+{
+  "epmAutomatePath":  "C:\\Oracle\\EPMAutomate\\bin\\epmautomate.bat",
+  "logRetentionDays": 30,
+  "dataRetentionDays": 7,
+  "defaultEnvironment": "DEV",
+
+  "alertEmail": "",
+
+  "smtp": {
+    "server":   "",
+    "from":     "epm-automate@yourcompany.com",
+    "alertsTo": []
+  }
+}

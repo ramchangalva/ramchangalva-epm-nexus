@@ -1,0 +1,7 @@
+{
+  "serviceUrl":     "https://<tenant>-dev.pbcs.us1.oraclecloud.com",
+  "identityDomain": "<identity-domain>",
+  "username":       "<admin-user>@example.com",
+  "passwordFile":   "config/passwords/dev.epw",
+  "applicationName":"<EPM-App-Name>"
+}
