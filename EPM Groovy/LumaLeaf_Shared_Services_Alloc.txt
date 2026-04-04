@@ -1,0 +1,100 @@
+StringBuilder scriptBldr = StringBuilder.newInstance()
+
+// Declare array to house list of receiver Entities
+def lstEntity = []
+
+// Iterate through edited cells and add the Entity for each intersection to the array
+operation.grid.dataCellIterator({ DataCell cell -> cell.edited }).each {
+    lstEntity.add(it.getMemberName("Entity"))
+}
+
+// Build a string of only the unique Entities in the lstEntity array, properly formatted for Calc syntax
+String strEntity = """\"${lstEntity.unique().join('","')}\""""
+
+// Print the list of unique Entities for edited cells to the log for review
+println "Shared service allocations are running on the following Entities: " + strEntity
+
+// Build Calc Script
+scriptBldr <<"""
+
+SET UPDATECALC OFF;
+SET AGGMISSG ON;
+SET EMPTYMEMBERSETS ON;
+
+/* Copies allocation driver percentages into forecast years and creates necessary blocks */
+FIX("SharedSvc", @LIST($strEntity), {Cost Center}, {Project}, "Forecast", {Version}, "Input", @RELATIVE("Movement", 0 ))
+
+DATACOPY &CurYear->"A_DRV_AllocPct"->"BegBalance" TO &FcstYr1->"A_DRV_AllocPct"->"BegBalance";
+DATACOPY &CurYear->"A_DRV_AllocPct"->"BegBalance" TO &FcstYr2->"A_DRV_AllocPct"->"BegBalance";
+
+ENDFIX
+
+/* Calculates allocated shared service expense by month based on allocation drivers */
+FIX("SharedSvc", @LIST($strEntity), {Cost Center}, {Project}, "Forecast", @LIST(&CurYear:&FcstYr2), "Input", @LIST("Jan":"Dec"), {Version})
+
+    FIX(@RELATIVE("Movement", 0 ))
+    "A_DRV_AllocPct" (
+
+        IF((@ISMBR(&CurrMth:"Dec") AND @ISMBR(&CurYear)) OR @ISMBR(&FcstYr1:&FcstYr2))
+
+            "A_660000_SharedServicesExpense" =
+                "A_660000_SharedServicesExpense"->"SharedSvc"->"Mvmnt_Input"
+                * "A_DRV_AllocPct";
+
+            "A_670000_AllocatedSharedSvc" =
+                "A_660000_SharedServicesExpense";
+
+        ENDIF
+    )
+    ENDFIX
+ENDFIX
+
+/* Second half of allocation logic and application of allocation factor */
+FIX("SharedSvc", @LIST($strEntity), {Cost Center}, {Project}, "Forecast", @LIST(&CurYear:&FcstYr2), "Input", @LIST("Jan":"Dec"), {Version})
+    FIX(@RELATIVE("Movement", 0 ))
+    "A_DRV_AllocPct" (
+        /* Apply allocation factor to receiving intersections */
+        "A_670000_AllocatedSharedSvc" =
+            "A_660000_SharedServicesExpense"->"SharedSvc"->"Mvmnt_Input"
+            * "A_DRV_AllocPct";
+    )
+    ENDFIX
+    @IDESCENDANTS("Movement");
+ENDFIX
+
+/* Allocate shared services down to Cost Center */
+FIX("SharedSvc", @LIST($strEntity), @RELATIVE("Cost Center",0), {Project}, "Forecast", {Version}, "Input")
+    FIX("NoProject", @LIST(&CurYear:&FcstYr2))
+        SET CREATEBLOCKONEQ ON;
+        "A_670000_AllocatedSharedSvc" =
+            "A_670000_AllocatedSharedSvc"->"NoCostCenter"->"Movement"->"Input"
+            * "A_DRV_CostCenterMixPct"->"NoProject"->"SharedSvc";
+        SET CREATEBLOCKONEQ OFF;
+    ENDFIX
+
+    FIX(&ActYear)
+        "NoProject"(
+            IF(@ISMBR("Jan":&PriorMth))
+                "A_670000_AllocatedSharedSvc" = #MISSING;
+            ENDIF
+        )
+    ENDFIX
+ENDFIX
+
+/* Aggregate Cost Center while preserving RTPs */
+FIX("SharedSvc", @LIST($strEntity), {Project}, "Forecast", {Version}, @LIST(&CurYear:&FcstYr2), "Input", @LIST("Jan":"Dec"))
+    AGG("Cost Center");
+ENDFIX
+
+"""
+
+// If no unique Entities were edited, replace the script with a notification message
+if (strEntity.length() < 3) {
+    scriptBldr.delete(0, scriptBldr.length())
+    scriptBldr.append("""/* Nothing was changed so no shared services allocations were executed */""")
+    println scriptBldr.toString()
+    return scriptBldr.toString()
+} else {
+    println scriptBldr.toString()
+    return scriptBldr.toString()
+}

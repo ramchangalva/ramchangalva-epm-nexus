@@ -1,0 +1,126 @@
+StringBuilder scriptBldr = StringBuilder.newInstance()
+
+// Declare array to house list of Entities
+def lstEntity = []
+
+// Collect edited Entities (same logic)
+operation.grid.dataCellIterator({ DataCell cell -> cell.edited }).each {
+    lstEntity.add(it.getMemberName("Entity"))
+}
+
+// Build unique Entity list
+String strEntity = """\"${lstEntity.unique().join('","')}\""""
+
+println "Calculations are running on the following Entities: " + strEntity
+
+
+scriptBldr << """
+
+SET UPDATECALC OFF;
+SET AGGMISSG ON;
+SET EMPTYMEMBERSETS ON;
+
+/* Copy driver assumptions into forecast years */
+FIX("TotalCorp", @LIST($strEntity), {Product}, {Customer Segment}, {Channel},
+    "Forecast", {Version}, "Input", @RELATIVE("Movement", 0))
+
+DATACOPY &CurYear->"A_DRV_RevenueFactor"->"BegBalance"
+    TO &FcstYr1->"A_DRV_RevenueFactor"->"BegBalance";
+
+DATACOPY &CurYear->"A_DRV_RevenueFactor"->"BegBalance"
+    TO &FcstYr2->"A_DRV_RevenueFactor"->"BegBalance";
+
+ENDFIX
+
+/* Revenue calculation based on drivers */
+FIX("TotalCorp", @LIST($strEntity), {Product}, {Customer Segment}, {Channel},
+    "Forecast", @LIST(&CurYear:&FcstYr2), "Input",
+    @LIST("Jan":"Dec"), {Version})
+
+    FIX(@RELATIVE("Movement", 0))
+
+        "A_400000_Revenue" (
+        
+            IF(@ISMBR(&CurrMth:"Dec") AND @ISMBR(&CurYear) OR @ISMBR(&FcstYr1:&FcstYr2))
+                
+                /* Revenue = Units * Price * (1 - Discount) */
+                "A_400000_Revenue" =
+                    ("A_DRV_Units" * "A_DRV_Price") *
+                    (1 - "A_DRV_DiscountPct");
+
+                /* COGS */
+                "A_500000_COGS" =
+                    "A_400000_Revenue" * "A_DRV_COGSPct";
+
+                /* Gross Margin */
+                "A_405000_GrossMargin" =
+                    "A_400000_Revenue" - "A_500000_COGS";
+
+            ENDIF
+        )
+    ENDFIX
+ENDFIX
+
+/* Apply driver-based adjustments (second stage calc) */
+FIX("TotalCorp", @LIST($strEntity), {Product}, {Customer Segment}, {Channel},
+    "Forecast", @LIST(&CurYear:&FcstYr2), "Input",
+    @LIST("Jan":"Dec"), {Version})
+
+    FIX(@RELATIVE("Movement", 0))
+        "A_400000_Revenue" (
+            /* Additional adjustments placeholder */
+        )
+    ENDFIX
+
+    @IDESCENDANTS("Movement");
+
+ENDFIX
+
+/* Allocation example: distribute revenue across product */
+FIX("TotalCorp", @LIST($strEntity), @RELATIVE("Product",0),
+    {Customer Segment}, {Channel}, "Forecast", {Version}, "Input")
+
+    FIX("NoProject", @LIST(&CurYear:&FcstYr2))
+        SET CREATEBLOCKONEQ ON;
+
+        "A_400000_Revenue" =
+            "A_400000_Revenue"->"NoProduct"->"Movement"->"Input"
+            * "A_DRV_ProductMixPct"->"NoChannel"->"NoCustomer Segment"->"TotalCorp";
+
+        SET CREATEBLOCKONEQ OFF;
+    ENDFIX
+
+    FIX(&ActYear)
+        "NoProject"(
+            IF(@ISMBR("Jan":&PriorMth))
+                "A_400000_Revenue" = #MISSING;
+            ENDIF
+        )
+    ENDFIX
+
+ENDFIX
+
+/* Aggregate Product */
+FIX("TotalCorp", @LIST($strEntity), {Customer Segment}, {Channel},
+    "Forecast", {Version},
+    @LIST(&CurYear:&FcstYr2),
+    "Input", @LIST("Jan":"Dec"))
+
+    AGG("Product");
+
+ENDFIX
+
+"""
+
+// --------------------------------------------------
+// No change condition (unchanged logic)
+// --------------------------------------------------
+if (strEntity.length() < 3) {
+    scriptBldr.delete(0, scriptBldr.length())
+    scriptBldr.append("""/* Nothing was changed so no calculations were executed */""")
+    println scriptBldr.toString()
+    return scriptBldr.toString()
+} else {
+    println scriptBldr.toString()
+    return scriptBldr.toString()
+}

@@ -1,0 +1,50 @@
+// Get the dimension of the member in question
+Dimension entityDim = operation.application.getDimension("Entity")
+
+// Declare necessary Lists
+List<String> editedEntities = []
+List<String> pov = operation.grid.pov*.essbaseMbrName
+pov << "Forecast"
+
+List<String> columnsToValidate = operation.grid.columns[1]*.essbaseMbrName
+columnsToValidate.remove("Movement")
+
+// Iterate through edited cells and add the Entity for each intersection to the array
+operation.grid.dataCellIterator({DataCell cell -> cell.edited}).each {
+    editedEntities.add(it.getMemberName("Entity"))
+}
+
+// Build strings for logging
+String strEntity = "\"${editedEntities.unique().join('\",\"')}\""
+
+println "Validation is running on the following Entities: " + strEntity
+
+editedEntities.unique().each { entityName ->
+    def total = 0
+
+    columnsToValidate.each { colMember ->
+        def localPOV = pov + [entityName, colMember]
+        def cell = operation.grid.getCellWithMembers(localPOV as String[])
+        if (cell?.data != null) {
+            total += cell.data
+        }
+    }
+
+    println "Total for $entityName: $total"
+
+    if (total.round(3) > 1) {
+        columnsToValidate.each { colMember ->
+            def localPOV = pov + [entityName, colMember]
+            def cell = operation.grid.getCellWithMembers(localPOV as String[])
+            if (cell?.data != null) {
+                cell.data = 0
+            }
+        }
+
+        Member entityMbr = entityDim.getMember(entityName.toString())
+        def memberProps = entityMbr.toMap()
+        def aliasName = memberProps["Alias: Default"] ?: entityName
+
+        throwVetoException("$aliasName exceeds 100%. Values were cleared. Please adjust and submit again.")
+    }
+}

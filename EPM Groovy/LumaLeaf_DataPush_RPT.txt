@@ -1,0 +1,30 @@
+// Collect unique edited Entities
+Set<String> editedEntities = [] as Set
+
+operation.grid.dataCellIterator({ DataCell cell -> cell.edited }).each { cell ->
+    def entityName = cell.getMemberName("Entity")
+    if (entityName) {
+        editedEntities << entityName
+    }
+}
+
+// Exit if nothing was edited
+if (editedEntities.isEmpty()) {
+    println "No edited Entity intersections found. Smart Push was not executed."
+    return
+}
+
+// Build Smart Push member string
+String strEntity = """\"${editedEntities.join('","')}\""""
+
+println "Smart Push is running on the following Entities: " + strEntity
+
+String dataMapName = "DM_FIN_To_RPT"
+
+if (operation.grid.hasSmartPush(dataMapName)) {
+    operation.grid
+        .getSmartPush(dataMapName)
+        .execute(["Entity": strEntity])
+} else {
+    println "Smart Push '${dataMapName}' is not attached to this form."
+}
